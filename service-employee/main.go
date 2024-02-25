@@ -4,12 +4,17 @@ import (
 	"fmt"
 	"service-employee/config"
 	"service-employee/controller"
+	"service-employee/router"
 
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
 
+var db *gorm.DB
+
 func init() {
-	config.GetMongoDatabase()
+	config.InitPostgresDatabase()
+	db = config.GetPostgresDatabase()
 }
 
 func main() {
@@ -18,7 +23,11 @@ func main() {
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("Hi from service-employee")
 	})
-	app.Post("/employee", controller.CreateEmployee)
+
+	group := app.Group("/employee")
+
+	employeeController := controller.NewEmployeeContoller(db)
+	router.NewEmployeeRouter(group, employeeController)
 
 	port := 3002
 	fmt.Printf("Service employee is running on :%d...\n", port)

@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  api_gateway:
+    container_name: api_gateway
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - 3000:3000
+    volumes:
+      - ./api-gateway/:/go/src/app
+    depends_on:
+      - db
+      - service_user
+      - service_employee
+    links:
+      - db
+      - service_user
+      - service_employee
+    networks:
+      - hrga_api
+
+  service_user:
+    container_name: service_user
+    build:
+      context: ./service-user
+      dockerfile: Dockerfile
+    ports:
+      - 3001:3001
+    volumes:
+      - ./service-user/:/go/src/app
+    depends_on:
+      - db
+    links:
+      - db
+    networks:
+      - hrga_api
+
+  service_employee:
+    container_name: service_employee
+    build:
+      context: ./service-employee
+      dockerfile: Dockerfile
+    ports:
+      - 3002:3002
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: postgres
+    volumes:
+      - ./service-employee/:/go/src/app
+    depends_on:
+      - db
+    links:
+      - db
+    networks:
+      - hrga_api
+
+
+  db:
+    image: postgres:latest
+    restart: always
+    container_name: db
+    build:
+      context: ./db
+      dockerfile: Dockerfile
+    ports:
+      - '5435:5432'
+    environment:
+      - POSTGRES_DB=hrga_api
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=admin
+      
+    networks:
+      - hrga_api
+
+volumes:
+  db:
+
+networks:
+  hrga_api:
+    driver: bridge

@@ -1,6 +1,6 @@
 package model
 
 type Employee struct {
-	Id   string `json:"id" bson:"_id"`
+	ID   string `json:"id" gorm:"primaryKey"`
 	Name string `json:"name"`
 }

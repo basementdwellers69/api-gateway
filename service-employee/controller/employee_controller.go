@@ -1,78 +1,38 @@
 package controller
 
 import (
-	"fmt"
-	"net/http"
-	"service-employee/config"
 	"service-employee/model"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"go.mongodb.org/mongo-driver/bson"
+	"gorm.io/gorm"
 )
 
-var user_uri string = "http://localhost:3001/user"
-
-type WebResponse struct {
-	Code int
-	Status string
-	Data interface{}
+type EmployeeController struct {
+	*gorm.DB
 }
 
-func CreateEmployee(c *fiber.Ctx) error {
-	db := config.GetMongoDatabase().Collection("employee")
-	var requestBody model.Employee
+func (db EmployeeController) NewEmployee(c *fiber.Ctx, request model.Employee) model.WebResponse {
 
-	c.BodyParser(&requestBody)
+	request.ID = uuid.New().String()
 
-	requestBody.Id = uuid.New().String()
-
-	access_token := c.Get("access_token")
-	if len(access_token) == 0 {
-		return c.Status(401).SendString("Invalid token: Access token missing")
-	}
-
-	req, err := http.NewRequest("GET", user_uri + "/auth", nil)
-	if err != nil {
-		fmt.Println("Error creating request:", err)
-		panic(err)
-	}
-
-	// Set headers
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("access_token", access_token)
-
-	// Send the request
-	client := http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println("Error sending request:", err)
-		panic(err)
-	}
-	defer resp.Body.Close()
-
-	// Print the response
-	// fmt.Println("Response Status:", resp.Status)
-	// fmt.Println("Response Headers:", resp.Header)
-
-	if resp.Status != "200 OK" {
-		c.Status(401).SendString("invalid token")
-	}
-
-	ctx, cancel := config.NewMongoContext()
-	defer cancel()
-
-	_, err = db.InsertOne(ctx, bson.M{
-		"name": requestBody.Name,
-	})
+	err := db.Create(&request).Error
 
 	if err != nil {
-		panic(err)
+		return model.WebResponse{
+			Code:   500,
+			Status: "INTERNAL_SERVER_ERROR",
+			Data:   err.Error(),
+		}
 	}
 
-	return c.JSON(WebResponse{
-		Code: 201,
+	return model.WebResponse{
+		Code:   200,
 		Status: "OK",
-		Data: requestBody,
-	})
+		Data:   request,
+	}
+}
+
+func NewEmployeeContoller(client *gorm.DB) EmployeeController {
+	return EmployeeController{client}
 }

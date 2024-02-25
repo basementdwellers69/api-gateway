@@ -1,92 +1,112 @@
 package controller
 
 import (
-	"context"
 	"errors"
+	"fmt"
+	"net/mail"
 	"service-user/helpers"
 	"service-user/model"
 
-	"service-user/config"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"go.mongodb.org/mongo-driver/bson"
+	"gorm.io/gorm"
 )
 
-type WebResponse struct {
-	Code int
-	Status string
-	Data interface{}
+type UserController struct {
+	*gorm.DB
 }
 
-func Register(c *fiber.Ctx) error {
-	var requestBody model.User
-	db := config.GetMongoDatabase().Collection("user")
+func (db UserController) Register(c *fiber.Ctx, request model.User) model.WebResponse {
 
-	requestBody.Id = uuid.New().String()
+	request.ID = uuid.New().String()
+	request.Password = helpers.HashPassword([]byte(request.Password))
 
-	ctx, cancel := config.NewMongoContext()
-	defer cancel()
+	_, emailErr := mail.ParseAddress(request.Email)
 
-	c.BodyParser(&requestBody)
-
-	_, err := db.InsertOne(ctx, bson.M{
-		"email": requestBody.Email,
-		"password": helpers.HashPassword([]byte(requestBody.Password)),
-	})
-
-	if err != nil {
-		panic(err)
-	}
-
-	return c.JSON(WebResponse{
-		Code: 201,
-		Status: "OK",
-		Data: requestBody.Email,
-	})
-}
-
-func Login(c *fiber.Ctx) error {
-	db := config.GetMongoDatabase().Collection("user")
-
-	var requestBody model.User
-	var result model.User
- 
-	c.BodyParser(&requestBody)
-
-	err := db.FindOne(context.TODO(), bson.D{{"email", requestBody.Email}}).Decode(&result)
-	if err != nil {
-		return c.JSON(WebResponse{
-			Code: 401,
+	if emailErr != nil {
+		return model.WebResponse{
+			Code:   400,
 			Status: "BAD_REQUEST",
-			Data: err.Error(),
-		})
+			Data:   errors.New("invalid email").Error(),
+		}
 	}
 
-	checkPassword := helpers.ComparePassword([]byte(result.Password), []byte(requestBody.Password))
+	err := db.Create(&request).Error
+
+	if err != nil {
+		return model.WebResponse{
+			Code:   500,
+			Status: "INTERNAL_SERVER_ERROR",
+			Data:   err.Error(),
+		}
+	}
+
+	return model.WebResponse{
+		Code:   200,
+		Status: "OK",
+		Data:   request.Email,
+	}
+
+}
+
+func (db UserController) GetUser(c *fiber.Ctx) error {
+	access_token := c.Get("access_token")
+	var user model.User
+
+	if len(access_token) == 0 {
+		return c.Status(401).SendString("Invalid token: Access token missing")
+	}
+
+	checkToken, err := helpers.VerifyToken(access_token)
+
+	if err != nil {
+		return c.Status(401).SendString("Invalid token: Failed to verify token")
+	}
+
+	fmt.Println(checkToken, "CEKKKK", checkToken["email"])
+
+	userErr := db.Where("email = ?", checkToken["email"]).First(&user).Error
+	if userErr != nil {
+		return c.Status(401).SendString("Invalid token: User not found")
+	}
+
+	c.Locals("user", user)
+
+	return nil
+}
+
+func (db UserController) UserLogin(c *fiber.Ctx, request model.User) (int, interface{}) {
+	var user model.User
+	result := db.First(&user, "email = ?", request.Email)
+
+	if result.Error != nil {
+		return 500, model.WebResponse{
+			Code:   500,
+			Status: "INTERNAL_SERVER_ERROR",
+			Data:   result.Error.Error(),
+		}
+	}
+
+	checkPassword := helpers.ComparePassword([]byte(user.Password), []byte(request.Password))
 	if !checkPassword {
-		return c.JSON(WebResponse{
-			Code: 401,
+		return 401, model.WebResponse{
+			Code:   401,
 			Status: "BAD_REQUEST",
-			Data: errors.New("invalid password").Error(),
-		})
+			Data:   errors.New("invalid password").Error(),
+		}
 	}
 
-	access_token := helpers.SignToken(requestBody.Email)
+	access_token := helpers.SignToken(request.Email)
 
-	return c.JSON(struct{
-		Code int 
-		Status string
-		AccessToken string
-		Data interface{}
-	}{
-		Code: 200,
-		Status: "OK",
+	return 200, model.LoginResponse{
+		Code:        200,
+		Status:      "OK",
 		AccessToken: access_token,
-		Data: result,
-	})
+		Data:        user,
+	}
+
 }
 
-func Auth(c *fiber.Ctx) error {
-	return c.JSON("OK")
+func NewUserContoller(client *gorm.DB) UserController {
+	return UserController{client}
 }

@@ -4,13 +4,17 @@ import (
 	"fmt"
 	"service-user/config"
 	"service-user/controller"
-	"service-user/middleware"
+	"service-user/router"
 
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
 
+var db *gorm.DB
+
 func init() {
-	config.GetMongoDatabase()
+	config.InitPostgresDatabase()
+	db = config.GetPostgresDatabase()
 }
 
 func main() {
@@ -19,9 +23,12 @@ func main() {
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("Hi from service-user")
 	})
-	app.Post("/user/register", controller.Register)
-	app.Post("/user/login", controller.Login)
-	app.Get("/user/auth", middleware.Authentication, controller.Auth)
+
+	group := app.Group("/user")
+
+	userController := controller.NewUserContoller(db)
+
+	router.NewUserRouter(group, userController)
 
 	port := 3001
 	fmt.Printf("Service user is running on :%d...\n", port)
